@@ -1,0 +1,13 @@
+# Test Management System - 后端依赖
+Flask>=2.3.0
+flask-cors>=4.0.0
+requests>=2.31.0
+playwright>=1.40.0
+pytest>=7.4.0
+jinja2>=3.1.0
+python-dateutil>=2.8.0
+Pillow>=10.0.0
+
+# AI/OCR 依赖 (可选，需要额外配置)
+# baidu-aip>=4.16.13  # 百度AI OCR
+# pytesseract>=0.3.10  # 本地OCR备用

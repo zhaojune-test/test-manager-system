@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 项目敏感数据 (不要上传!)
+.env
+backend/data/llm_config.json
+backend/data/*.json
+!backend/data/llm_config.json.example
+
+# 日志
+logs/
+*.log
+
+# 测试输出
+test_results/
+reports/
+_bmad/
+
+# Playwright
+.playwright-mcp/
+
+# Node (如果有)
+node_modules/
+
+# Railway
+railway.json.local

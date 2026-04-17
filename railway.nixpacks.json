@@ -1,0 +1,12 @@
+{
+  "name": "test-manager",
+  "version": "1",
+  "engine": "python",
+  "pythonVersion": "3.11",
+  "startCommand": "cd backend && python server.py",
+  "installCommand": "pip install -r requirements.txt",
+  "env": {
+    "PYTHONUNBUFFERED": "1",
+    "FLASK_ENV": "production"
+  }
+}
