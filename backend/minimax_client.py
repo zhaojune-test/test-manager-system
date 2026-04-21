@@ -123,21 +123,51 @@ class MiniMaxClient:
         Returns:
             (success, test_cases_list_or_error)
         """
-        system_prompt = """你是一名SAAS行业的高级测试工程师，擅长根据需求生成功能测试用例。
+        system_prompt = """你是一名高级QA测试工程师，遵循BMad测试方法论。
 
-请直接返回JSON数组，不要任何额外内容。
-每个测试用例包含：case_id, name, type="functional", description, priority, steps=[{action, expected}], expected_result, tags
+## 核心原则
+1. **测试目标**：验证功能正确性、用户体验、数据完整性和错误处理
+2. **测试覆盖**：正向路径 + 边界值 + 异常场景 + 交互逻辑
 
-只返回10个测试用例，用JSON数组表示。"""
+## 测试用例设计规范
 
-        user_prompt = f"""项目背景：{project_context if project_context else 'SAAS企业管理系统'}
+### 用例结构
+每个测试用例必须包含：
+- case_id: TC_XXX 格式（自增编号）
+- name: 清晰的测试名称，包含"验证"二字
+- type: "functional"
+- description: 简短的测试目的描述
+- priority: high(核心流程) / medium(一般功能) / low(辅助功能)
+- tags: 标签数组，如["登录","正向","高优先级"]
 
-需求：{requirement_text}
+### 测试步骤规范
+steps 数组每项：
+- action: 具体的操作描述（谁/做什么/在哪）
+- expected: 明确的预期结果（应该看到什么/发生什么）
 
-请生成10个功能测试用例JSON数组。示例格式：
-[{{"case_id":"TC_001","name":"测试名称","type":"functional","description":"描述","priority":"high","steps":[{{"action":"操作","expected":"预期"}}],"expected_result":"结果","tags":["标签"]}}]
+### 测试用例分类
+1. **正向测试**：正常流程、必填项验证、数据合法性
+2. **反向测试**：必填项缺失、格式错误、边界值、数据越界
+3. **异常测试**：网络异常、超时、服务端错误处理
+4. **交互测试**：多步骤流程、页面跳转、数据传递
 
-只返回JSON数组，不要其他文字。"""
+## 输出要求
+
+根据需求分析后，生成12-18个测试用例，覆盖上述所有分类。
+
+返回格式：严格JSON数组，不要任何额外文字。
+每个用例示例：
+{"case_id":"TC_001","name":"验证正常登录成功","type":"functional","description":"使用正确的用户名密码登录系统","priority":"high","steps":[{"action":"输入正确的用户名","expected":"用户名显示在输入框"},{"action":"输入正确的密码","expected":"密码显示为***"},{"action":"点击登录按钮","expected":"跳转到首页，显示用户信息"}],"expected_result":"登录成功，进入系统主页","tags":["登录","正向","高优先级"],"module":"登录模块"}"""
+
+        user_prompt = f"""## 项目背景
+{project_context if project_context else 'SAAS企业管理系统'}
+
+## 需求文档内容
+{requirement_text}
+
+请根据上述需求文档，生成完整的测试用例。
+确保覆盖：正向流程、边界值、异常处理、交互逻辑。
+生成12-18个测试用例。"""
 
         success, result = self.chat(
             messages=[
@@ -270,6 +300,290 @@ class MiniMaxClient:
 
         except (KeyError, json.JSONDecodeError) as e:
             return False, f"解析分析结果失败: {str(e)}"
+
+    def generate_test_cases_from_images(self, images: List[Dict], module_name: str = "") -> Tuple[bool, List[Dict]]:
+        """
+        根据多张截图生成功能测试用例（视觉理解）
+
+        Args:
+            images: 图片数据列表，格式为 [{"filename": "xxx.png", "base64": "..."}, ...]
+            module_name: 模块名称
+
+        Returns:
+            (success, test_cases_list_or_error)
+        """
+        system_prompt = """你是一名高级QA测试工程师，遵循BMad测试方法论。
+
+## 核心原则
+1. **测试目标**：验证功能正确性、用户体验、数据完整性和错误处理
+2. **测试覆盖**：正向路径 + 边界值 + 异常场景 + 交互逻辑
+
+## 测试用例设计规范
+
+### 用例结构
+每个测试用例必须包含：
+- case_id: TC_XXX 格式（自增编号）
+- name: 清晰的测试名称，包含"验证"二字
+- type: "functional"
+- description: 简短的测试目的描述
+- priority: high(核心流程) / medium(一般功能) / low(辅助功能)
+- tags: 标签数组，如["登录","正向","高优先级"]
+
+### 测试步骤规范
+steps 数组每项：
+- action: 具体的操作描述（谁/做什么/在哪）
+- expected: 明确的预期结果（应该看到什么/发生什么）
+
+### 测试用例分类
+1. **正向测试**：正常流程、必填项验证、数据合法性
+2. **反向测试**：必填项缺失、格式错误、边界值、数据越界
+3. **异常测试**：网络异常、超时、服务端错误处理
+4. **交互测试**：多步骤流程、页面跳转、数据传递
+
+## 输出要求
+
+根据UI截图分析后，生成12-18个测试用例，覆盖上述所有分类。
+
+返回格式：严格JSON数组，不要任何额外文字。
+每个用例示例：
+{"case_id":"TC_001","name":"验证正常登录成功","type":"functional","description":"使用正确的用户名密码登录系统","priority":"high","steps":[{"action":"输入正确的用户名","expected":"用户名显示在输入框"},{"action":"输入正确的密码","expected":"密码显示为***"},{"action":"点击登录按钮","expected":"跳转到首页，显示用户信息"}],"expected_result":"登录成功，进入系统主页","tags":["登录","正向","高优先级"],"module":"登录模块"}"""
+
+        # 构建多模态消息内容
+        content = [{"type": "text", "text": f"请分析这些UI截图，识别功能元素和交互流程。模块名称：{module_name if module_name else 'UI功能'}"}]
+        for img in images:
+            # 根据文件扩展名确定 MIME 类型
+            filename = img.get("filename", "image.png")
+            if filename.lower().endswith(".jpg") or filename.lower().endswith(".jpeg"):
+                mime_type = "image/jpeg"
+            elif filename.lower().endswith(".gif"):
+                mime_type = "image/gif"
+            elif filename.lower().endswith(".webp"):
+                mime_type = "image/webp"
+            else:
+                mime_type = "image/png"
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime_type};base64,{img['base64']}"}
+            })
+
+        success, result = self.chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content}
+            ],
+            temperature=0.7,
+            max_tokens=32000
+        )
+
+        if not success:
+            print(f"[MiniMax Vision] API调用失败: {result}")
+            return False, result
+
+        print(f"[MiniMax Vision] 原始响应长度: {len(str(result))}")
+
+        # 解析返回的内容
+        try:
+            # MiniMax API 返回格式
+            print(f"[MiniMax Vision] result类型: {type(result)}, keys: {result.keys() if hasattr(result, 'keys') else 'N/A'}")
+            choices = result.get('choices')
+            print(f"[MiniMax Vision] choices: {choices}")
+            if choices and len(choices) > 0:
+                content_text = choices[0].get('message', {}).get('content', '')
+                print(f"[MiniMax Vision] content_text类型: {type(content_text)}")
+            elif 'messages' in result:
+                messages = result.get('messages', [])
+                if messages:
+                    content_text = messages[-1].get('text', '')
+                else:
+                    content_text = ''
+            else:
+                print(f"[MiniMax Vision] 未知响应格式，result keys: {result.keys() if hasattr(result, 'keys') else 'not a dict'}")
+                return False, f"未知响应格式: {str(result)[:200]}"
+
+            if not content_text:
+                return False, "模型返回内容为空"
+
+            print(f"[MiniMax Vision] 解析到的content_text长度: {len(content_text)}")
+            print(f"[MiniMax Vision] content_text前300字符: {content_text[:300]}")
+
+            # 尝试提取JSON数组
+            first_bracket = content_text.find('[')
+            last_bracket = content_text.rfind(']')
+
+            if first_bracket >= 0 and last_bracket > first_bracket:
+                extracted = content_text[first_bracket:last_bracket + 1]
+                if extracted.startswith('[') and extracted.endswith(']'):
+                    try:
+                        test_cases = json.loads(extracted)
+                        return True, test_cases
+                    except json.JSONDecodeError as e:
+                        print(f"[MiniMax Vision] JSON解析失败: {e}")
+                        pass
+
+            # 如果完整JSON解析失败，尝试用正则提取每个完整的case对象
+            import re
+            # 匹配完整的JSON对象 { ... }
+            pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+            matches = re.findall(pattern, content_text)
+            if matches:
+                print(f"[MiniMax Vision] 正则匹配到 {len(matches)} 个对象")
+                valid_cases = []
+                for match in matches:
+                    try:
+                        case = json.loads(match)
+                        if 'case_id' in case and 'name' in case:
+                            valid_cases.append(case)
+                    except:
+                        pass
+                if valid_cases:
+                    print(f"[MiniMax Vision] 有效用例数: {len(valid_cases)}")
+                    return True, valid_cases
+
+            return False, f"模型返回格式错误，无法解析测试用例。返回内容: {content_text[:300]}"
+
+        except (KeyError, json.JSONDecodeError) as e:
+            return False, f"解析测试用例失败: {str(e)}"
+
+    def generate_test_cases_from_images_and_text(self, images: List[Dict], text: str, module_name: str = "") -> Tuple[bool, List[Dict]]:
+        """
+        根据多张截图+文本需求生成功能测试用例（视觉理解+文本理解）
+
+        Args:
+            images: 图片数据列表，格式为 [{"filename": "xxx.png", "base64": "..."}, ...]
+            text: 需求文档文本内容
+            module_name: 模块名称
+
+        Returns:
+            (success, test_cases_list_or_error)
+        """
+        system_prompt = """你是一名高级QA测试工程师，遵循BMad测试方法论。
+
+## 核心原则
+1. **测试目标**：验证功能正确性、用户体验、数据完整性和错误处理
+2. **测试覆盖**：正向路径 + 边界值 + 异常场景 + 交互逻辑
+3. **输入理解**：同时分析UI截图和文字需求，二者结合理解完整功能
+
+## 测试用例设计规范
+
+### 用例结构
+每个测试用例必须包含：
+- case_id: TC_XXX 格式（自增编号）
+- name: 清晰的测试名称，包含"验证"二字
+- type: "functional"
+- description: 简短的测试目的描述
+- priority: high(核心流程) / medium(一般功能) / low(辅助功能)
+- tags: 标签数组，如["登录","正向","高优先级"]
+
+### 测试步骤规范
+steps 数组每项：
+- action: 具体的操作描述（谁/做什么/在哪）
+- expected: 明确的预期结果（应该看到什么/发生什么）
+
+### 测试用例分类
+1. **正向测试**：正常流程、必填项验证、数据合法性
+2. **反向测试**：必填项缺失、格式错误、边界值、数据越界
+3. **异常测试**：网络异常、超时、服务端错误处理
+4. **交互测试**：多步骤流程、页面跳转、数据传递
+
+## 输出要求
+
+根据UI截图和需求文档分析后，生成15-20个测试用例，覆盖上述所有分类。
+截图展示的界面元素应与文字需求结合理解。
+
+返回格式：严格JSON数组，不要任何额外文字。
+每个用例示例：
+{"case_id":"TC_001","name":"验证正常登录成功","type":"functional","description":"使用正确的用户名密码登录系统","priority":"high","steps":[{"action":"输入正确的用户名","expected":"用户名显示在输入框"},{"action":"输入正确的密码","expected":"密码显示为***"},{"action":"点击登录按钮","expected":"跳转到首页，显示用户信息"}],"expected_result":"登录成功，进入系统主页","tags":["登录","正向","高优先级"],"module":"登录模块"}"""
+
+        # 构建多模态消息内容
+        content = [{"type": "text", "text": f"【需求文档】\n{text}\n\n请分析这些UI截图，结合上述需求文档识别功能元素和交互流程。"}]
+        for img in images:
+            filename = img.get("filename", "image.png")
+            if filename.lower().endswith(".jpg") or filename.lower().endswith(".jpeg"):
+                mime_type = "image/jpeg"
+            elif filename.lower().endswith(".gif"):
+                mime_type = "image/gif"
+            elif filename.lower().endswith(".webp"):
+                mime_type = "image/webp"
+            else:
+                mime_type = "image/png"
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime_type};base64,{img['base64']}"}
+            })
+
+        success, result = self.chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content}
+            ],
+            temperature=0.7,
+            max_tokens=32000
+        )
+
+        if not success:
+            print(f"[MiniMax Vision+Text] API调用失败: {result}")
+            return False, result
+
+        print(f"[MiniMax Vision+Text] 原始响应长度: {len(str(result))}")
+
+        # 解析返回的内容
+        try:
+            print(f"[MiniMax Vision+Text] result类型: {type(result)}, keys: {result.keys() if hasattr(result, 'keys') else 'N/A'}")
+            choices = result.get('choices')
+            print(f"[MiniMax Vision+Text] choices: {choices}")
+            if choices and len(choices) > 0:
+                content_text = choices[0].get('message', {}).get('content', '')
+                print(f"[MiniMax Vision+Text] content_text类型: {type(content_text)}")
+            elif 'messages' in result:
+                messages = result.get('messages', [])
+                if messages:
+                    content_text = messages[-1].get('text', '')
+                else:
+                    content_text = ''
+            else:
+                return False, f"未知响应格式: {str(result)[:200]}"
+
+            if not content_text:
+                return False, "模型返回内容为空"
+
+            print(f"[MiniMax Vision+Text] 解析到的content_text长度: {len(content_text)}")
+            print(f"[MiniMax Vision+Text] content_text前300字符: {content_text[:300]}")
+
+            first_bracket = content_text.find('[')
+            last_bracket = content_text.rfind(']')
+
+            if first_bracket >= 0 and last_bracket > first_bracket:
+                extracted = content_text[first_bracket:last_bracket + 1]
+                if extracted.startswith('[') and extracted.endswith(']'):
+                    try:
+                        test_cases = json.loads(extracted)
+                        return True, test_cases
+                    except json.JSONDecodeError as e:
+                        print(f"[MiniMax Vision+Text] JSON解析失败: {e}")
+                        pass
+
+            # 如果完整JSON解析失败，尝试用正则提取每个完整的case对象
+            import re
+            pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+            matches = re.findall(pattern, content_text)
+            if matches:
+                print(f"[MiniMax Vision+Text] 正则匹配到 {len(matches)} 个对象")
+                valid_cases = []
+                for match in matches:
+                    try:
+                        case = json.loads(match)
+                        if 'case_id' in case and 'name' in case:
+                            valid_cases.append(case)
+                    except:
+                        pass
+                if valid_cases:
+                    print(f"[MiniMax Vision+Text] 有效用例数: {len(valid_cases)}")
+                    return True, valid_cases
+
+            return False, f"模型返回格式错误，无法解析测试用例。返回内容: {content_text[:300]}"
+
+        except (KeyError, json.JSONDecodeError) as e:
+            return False, f"解析测试用例失败: {str(e)}"
 
 
 def get_minimax_client(api_key: str = None, group_id: str = None, model: str = "minimax-m2.7", local: bool = False) -> MiniMaxClient:

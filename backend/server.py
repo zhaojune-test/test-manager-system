@@ -6,6 +6,7 @@ import os
 import json
 import uuid
 import datetime
+import base64
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import sys
@@ -1545,6 +1546,211 @@ def recognize_image():
             })
 
     except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/functional/generate-from-images', methods=['POST'])
+def generate_from_images():
+    """多图片识别生成测试用例（调用大模型视觉理解）"""
+    import base64
+
+    # 支持多文件上传
+    files = request.files.getlist('images')
+
+    if not files or len(files) == 0:
+        return jsonify({'success': False, 'message': '请提供至少一张图片'}), 400
+
+    try:
+        # 解析图片数据
+        images = []
+        for f in files:
+            if f.filename:
+                img_bytes = f.read()
+                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                images.append({"filename": f.filename, "base64": img_b64})
+
+        module_name = request.form.get('module', 'UI功能')
+
+        # 从配置文件读取 API Key
+        llm_config = load_json(os.path.join(DATA_DIR, 'llm_config.json'))
+        if not isinstance(llm_config, dict):
+            llm_config = {}
+        minimax_api_key = llm_config.get('minimax_api_key', '') or os.getenv('MINIMAX_API_KEY', '')
+        minimax_group_id = llm_config.get('minimax_group_id', '') or os.getenv('MINIMAX_GROUP_ID', '')
+
+        if not minimax_api_key:
+            return jsonify({'success': False, 'message': '请先在AI配置中设置MiniMax API Key'}), 400
+
+        # 调用 MiniMax 视觉接口
+        from backend.minimax_client import get_minimax_client
+        client = get_minimax_client(api_key=minimax_api_key, group_id=minimax_group_id)
+
+        success, result = client.generate_test_cases_from_images(images, module_name)
+
+        if not success:
+            print(f"[DEBUG] MiniMax返回错误: {result}")
+            return jsonify({'success': False, 'message': result}), 500
+
+        print(f"[DEBUG] MiniMax返回测试用例数量: {len(result)}, 内容: {result[:200] if result else '空'}")
+
+        # 转换并保存测试用例
+        testcases = load_json(os.path.join(DATA_DIR, 'functional_testcases.json'))
+        for tc in result:
+            tc['id'] = str(uuid.uuid4())
+            tc['module'] = module_name
+            tc['status'] = 'pending'
+            tc['created_at'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            tc['updated_at'] = tc['created_at']
+        testcases.extend(result)
+        save_json(os.path.join(DATA_DIR, 'functional_testcases.json'), testcases)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'count': len(result),
+                'message': f'成功生成 {len(result)} 个测试用例'
+            }
+        })
+
+    except ValueError as e:
+        return jsonify({'success': False, 'message': f'API配置错误: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/functional/generate-from-unified', methods=['POST'])
+def generate_from_unified():
+    """统一的AI生成测试用例接口
+
+    支持同时接收：需求文本、需求文档文件、多张图片
+    根据输入组合情况调用不同的大模型接口
+    """
+    # 获取所有参数
+    req_text = request.form.get('requirement_text', '')
+    project_context = request.form.get('project_context', '')
+    module_name = request.form.get('module', 'UI功能')
+
+    # 获取需求文档文件
+    req_files = request.files.getlist('requirement_file')
+
+    # 获取图片文件
+    img_files = request.files.getlist('images')
+
+    # 检查是否有任何输入
+    if not req_text and len(req_files) == 0 and len(img_files) == 0:
+        return jsonify({'success': False, 'message': '请提供需求文档内容、上传文档或上传图片'}), 400
+
+    # 从配置文件读取 API Key
+    llm_config = load_json(os.path.join(DATA_DIR, 'llm_config.json'))
+    if not isinstance(llm_config, dict):
+        llm_config = {}
+    minimax_api_key = llm_config.get('minimax_api_key', '') or os.getenv('MINIMAX_API_KEY', '')
+    minimax_group_id = llm_config.get('minimax_group_id', '') or os.getenv('MINIMAX_GROUP_ID', '')
+
+    if not minimax_api_key:
+        return jsonify({'success': False, 'message': '请先在AI配置中设置MiniMax API Key'}), 400
+
+    try:
+        from backend.minimax_client import get_minimax_client
+        client = get_minimax_client(api_key=minimax_api_key, group_id=minimax_group_id)
+
+        result = None
+        combined_prompt = ""
+
+        # 处理需求文档文件
+        if len(req_files) > 0 and req_files[0].filename:
+            req_file = req_files[0]
+            filename = req_file.filename.lower()
+
+            if filename.endswith('.docx'):
+                # 解析 docx 文件
+                try:
+                    from docx import Document
+                    import io
+                    doc = Document(io.BytesIO(req_file.read()))
+                    req_text_from_file = '\n'.join([p.text for p in doc.paragraphs])
+                    req_text = req_text + '\n\n' + req_text_from_file if req_text else req_text_from_file
+                except ImportError:
+                    return jsonify({'success': False, 'message': '服务器未安装 python-docx 库，无法解析 Word 文档'}), 500
+                except Exception as e:
+                    return jsonify({'success': False, 'message': f'解析Word文档失败: {str(e)}'}), 500
+
+            elif filename.endswith('.pdf'):
+                # 解析 PDF 文件
+                try:
+                    import fitz  # PyMuPDF
+                    doc = fitz.open(stream=req_file.read(), filetype="pdf")
+                    req_text_from_file = ""
+                    for page in doc:
+                        req_text_from_file += page.get_text()
+                    req_text = req_text + '\n\n' + req_text_from_file if req_text else req_text_from_file
+                except ImportError:
+                    return jsonify({'success': False, 'message': '服务器未安装 PyMuPDF 库，无法解析 PDF 文档'}), 500
+                except Exception as e:
+                    return jsonify({'success': False, 'message': f'解析PDF失败: {str(e)}'}), 500
+
+        # 处理图片文件
+        images = []
+        for f in img_files:
+            if f.filename:
+                img_bytes = f.read()
+                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                images.append({"filename": f.filename, "base64": img_b64})
+
+        # 构建组合提示词
+        prompt_parts = []
+        if project_context:
+            prompt_parts.append(f"【项目背景】\n{project_context}")
+        if req_text:
+            prompt_parts.append(f"【需求文档】\n{req_text}")
+
+        combined_prompt = "\n\n".join(prompt_parts)
+
+        # 根据输入类型调用不同的大模型接口
+        if len(images) > 0 and req_text:
+            # 既有图片又有文本 - 组合使用
+            print(f"[DEBUG] 组合模式: {len(images)}张图片 + 文本长度{len(req_text)}")
+            success, result = client.generate_test_cases_from_images_and_text(
+                images, combined_prompt, module_name
+            )
+        elif len(images) > 0:
+            # 只有图片
+            print(f"[DEBUG] 图片模式: {len(images)}张图片")
+            success, result = client.generate_test_cases_from_images(images, module_name)
+        else:
+            # 只有文本
+            print(f"[DEBUG] 文本模式: 文本长度{len(req_text)}")
+            success, result = client.generate_test_cases(combined_prompt, project_context)
+
+        if not success:
+            print(f"[DEBUG] 生成失败: {result}")
+            return jsonify({'success': False, 'message': result}), 500
+
+        print(f"[DEBUG] 成功生成 {len(result)} 个测试用例")
+
+        # 保存测试用例
+        testcases = load_json(os.path.join(DATA_DIR, 'functional_testcases.json'))
+        for tc in result:
+            tc['id'] = str(uuid.uuid4())
+            tc['module'] = module_name
+            tc['status'] = 'pending'
+            tc['created_at'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            tc['updated_at'] = tc['created_at']
+        testcases.extend(result)
+        save_json(os.path.join(DATA_DIR, 'functional_testcases.json'), testcases)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'count': len(result),
+                'message': f'成功生成 {len(result)} 个测试用例'
+            }
+        })
+
+    except ValueError as e:
+        return jsonify({'success': False, 'message': f'API配置错误: {str(e)}'}), 500
+    except Exception as e:
+        print(f"[DEBUG] 异常: {str(e)}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

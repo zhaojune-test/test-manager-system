@@ -555,7 +555,7 @@
                     <div style="display: flex; gap: 10px;">
                         <button class="btn btn-secondary" id="btnSwitchView" onclick="switchFunctionalView()">切换分组视图</button>
                         <button class="btn btn-secondary" onclick="showImportModal()">导入用例</button>
-                        <button class="btn btn-secondary" onclick="showImageUploadModal()">图片识别</button>
+                        <button class="btn btn-secondary" onclick="showImageUploadModal()">AI生成测试用例</button>
                         <button class="btn btn-success" id="btnBatchExecuteFunctional" onclick="openBatchExecuteModal()" style="display: none;">批量执行</button>
                         <button class="btn btn-danger" id="btnBatchDeleteFunctional" onclick="batchDeleteFunctionalCases()" style="display: none;">批量删除</button>
                         <button class="btn btn-info" id="btnBatchAssociateRequirement" onclick="showBatchAssociateModal()" style="display: none;">批量关联需求</button>
@@ -1559,6 +1559,7 @@
             const tbody = document.getElementById('functionalCasesBody');
             if (!testcases || testcases.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无功能测试用例，请添加或导入</td></tr>';
+                updateBatchDeleteButton(); // 重置按钮状态
                 return;
             }
 
@@ -1578,6 +1579,7 @@
                     </td>
                 </tr>
             `).join('');
+            updateBatchDeleteButton(); // 重置按钮状态
         }
 
         // 分组视图状态
@@ -2687,6 +2689,17 @@
             document.getElementById('imageUploadModal').classList.remove('active');
             // 重置AI生成状态
             document.getElementById('aiGenStatus').innerHTML = '';
+            // 清空已粘贴的图片
+            pastedImages = [];
+            updateImagePreviewGrid();
+            // 清空文件选择
+            const imageFiles = document.getElementById('imageFiles');
+            if (imageFiles) imageFiles.value = '';
+            // 清空模块名称
+            const imageModuleName = document.getElementById('imageModuleName');
+            if (imageModuleName) imageModuleName.value = '';
+            // 清空预览
+            document.getElementById('imagePreview').innerHTML = '';
         }
 
         // ========== HAR导入相关函数 ==========
@@ -2789,16 +2802,19 @@
         // 切换生成模式标签页
         function switchGenTab(tab) {
             // 隐藏所有面板
-            document.getElementById('panelDoc').style.display = 'none';
+            document.getElementById('panelUnified').style.display = 'none';
             document.getElementById('panelManual').style.display = 'none';
-            document.getElementById('panelImage').style.display = 'none';
             // 移除所有标签的active状态
-            document.getElementById('tabDoc').classList.remove('active');
+            document.getElementById('tabUnified').classList.remove('active');
             document.getElementById('tabManual').classList.remove('active');
-            document.getElementById('tabImage').classList.remove('active');
             // 显示选中的面板
-            document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = 'block';
-            document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+            if (tab === 'unified') {
+                document.getElementById('panelUnified').style.display = 'block';
+                document.getElementById('tabUnified').classList.add('active');
+            } else {
+                document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = 'block';
+                document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+            }
         }
 
         // 文件上传预览
@@ -2816,6 +2832,90 @@
                 });
             }
         });
+
+        // 处理需求文档选择
+        function handleRequirementFileSelect(input) {
+            const preview = document.getElementById('reqFilePreview');
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                preview.textContent = '已选择: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+            } else {
+                preview.textContent = '';
+            }
+        }
+
+        // 统一的AI生成测试用例函数
+        async function generateFromUnified() {
+            const reqText = document.getElementById('requirementText').value.trim();
+            const projectContext = document.getElementById('projectContext').value.trim();
+            const reqFileInput = document.getElementById('requirementFile');
+            const imageFilesInput = document.getElementById('imageFiles');
+            const moduleName = document.getElementById('imageModuleName').value.trim();
+            const statusDiv = document.getElementById('aiGenStatus');
+
+            const reqFiles = reqFileInput ? reqFileInput.files : [];
+            const imageFiles = imageFilesInput ? imageFilesInput.files : [];
+            const allImages = [...imageFiles, ...pastedImages];
+
+            // 检查是否有任何输入
+            if (!reqText && reqFiles.length === 0 && allImages.length === 0) {
+                alert('请提供需求文档内容、上传文档文件或上传/粘贴图片');
+                return;
+            }
+
+            try {
+                statusDiv.innerHTML = '<p style="color: #666;">正在生成测试用例，请稍候...</p>';
+                const btn = event.target;
+                btn.disabled = true;
+                btn.textContent = '生成中...';
+
+                const formData = new FormData();
+
+                // 添加文本内容
+                if (reqText) {
+                    formData.append('requirement_text', reqText);
+                }
+                if (projectContext) {
+                    formData.append('project_context', projectContext);
+                }
+                if (moduleName) {
+                    formData.append('module', moduleName);
+                }
+
+                // 添加需求文档文件
+                if (reqFiles.length > 0) {
+                    formData.append('requirement_file', reqFiles[0]);
+                }
+
+                // 添加图片文件
+                for (let i = 0; i < allImages.length; i++) {
+                    formData.append('images', allImages[i]);
+                }
+
+                const res = await fetch(`${API_BASE}/functional/generate-from-unified`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                btn.disabled = false;
+                btn.textContent = 'AI生成测试用例';
+
+                if (data.success) {
+                    alert(`成功生成 ${data.data.count} 个测试用例`);
+                    closeImageUploadModal();
+                    loadFunctionalCases();
+                } else {
+                    statusDiv.innerHTML = '<p style="color: #e74c3c;">生成失败: ' + (data.message || '未知错误') + '</p>';
+                    alert(data.message || '生成失败');
+                }
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'AI生成测试用例';
+                statusDiv.innerHTML = '<p style="color: #e74c3c;">生成失败: ' + e.message + '</p>';
+                alert('生成失败：' + e.message);
+            }
+        }
 
         // 从文档AI生成测试用例
         async function generateFromDocument() {
@@ -2970,7 +3070,10 @@
             }
         });
 
-        // 处理粘贴事件
+        // 全局变量：存储粘贴的图片
+        let pastedImages = [];
+
+        // 处理粘贴事件 - 支持多图累积
         function handlePaste(e) {
             const items = e.clipboardData.items;
             if (!items) return;
@@ -2979,22 +3082,66 @@
                 if (items[i].type.indexOf('image') !== -1) {
                     const blob = items[i].getAsFile();
                     if (blob) {
-                        // 将粘贴的图片设置到 file input
-                        const fileInput = document.getElementById('imageFile');
-                        const dataTransfer = new DataTransfer();
-                        dataTransfer.items.add(blob);
-                        fileInput.files = dataTransfer.files;
-
-                        // 显示预览
-                        showImagePreview(blob);
-                        e.preventDefault();
-                        return;
+                        pastedImages.push(blob);
                     }
                 }
             }
+
+            if (pastedImages.length > 0) {
+                updateImagePreviewGrid();
+                e.preventDefault();
+            }
         }
 
-        // 显示图片预览
+        // 更新图片预览网格
+        function updateImagePreviewGrid() {
+            const grid = document.getElementById('imagePreviewGrid');
+            const pasteArea = document.getElementById('pasteArea');
+
+            if (!grid) return;
+
+            if (pastedImages.length === 0) {
+                grid.style.display = 'none';
+                grid.innerHTML = '';
+                pasteArea.querySelector('p').style.display = 'block';
+                return;
+            }
+
+            pasteArea.querySelector('p').style.display = 'none';
+            grid.style.display = 'grid';
+
+            grid.innerHTML = pastedImages.map((blob, idx) => {
+                const url = URL.createObjectURL(blob);
+                const name = blob.name || `图片 ${idx + 1}`;
+                return `<div class="preview-item">
+                    <img src="${url}" alt="${name}">
+                    <span class="remove-btn" onclick="removePastedImage(${idx})">×</span>
+                    <div class="img-name" title="${name}">${name}</div>
+                </div>`;
+            }).join('');
+        }
+
+        // 移除粘贴的图片
+        function removePastedImage(idx) {
+            if (idx >= 0 && idx < pastedImages.length) {
+                pastedImages.splice(idx, 1);
+                updateImagePreviewGrid();
+            }
+        }
+
+        // 处理文件选择（多选）
+        function handleImageFileSelect(input) {
+            if (input.files) {
+                for (let i = 0; i < input.files.length; i++) {
+                    pastedImages.push(input.files[i]);
+                }
+                updateImagePreviewGrid();
+                // 清空 input 以支持重新选择相同文件
+                input.value = '';
+            }
+        }
+
+        // 显示图片预览（单图兼容）
         function showImagePreview(blob) {
             const preview = document.getElementById('imagePreview');
             const url = URL.createObjectURL(blob);
@@ -3039,19 +3186,29 @@
             }
         }
 
-        // 上传图片识别
+        // 上传图片识别 - 支持多图
         async function recognizeImage() {
-            const fileInput = document.getElementById('imageFile');
-            if (!fileInput.files[0]) {
-                alert('请选择要识别的图片');
+            const fileInput = document.getElementById('imageFiles');
+            const files = fileInput ? fileInput.files : [];
+            const moduleInput = document.getElementById('imageModuleName');
+            const moduleName = moduleInput ? moduleInput.value.trim() : '';
+
+            // 合并已选择和已粘贴的图片
+            const allImages = [...files, ...pastedImages];
+
+            if (allImages.length === 0) {
+                alert('请上传或粘贴至少一张图片');
                 return;
             }
 
             const formData = new FormData();
-            formData.append('image', fileInput.files[0]);
+            for (let i = 0; i < allImages.length; i++) {
+                formData.append('images', allImages[i]);
+            }
+            formData.append('module', moduleName || 'UI功能');
 
             try {
-                const res = await fetch(`${API_BASE}/functional/recognize-image`, {
+                const res = await fetch(`${API_BASE}/functional/generate-from-images`, {
                     method: 'POST',
                     body: formData
                 });
@@ -3301,6 +3458,7 @@
             const tbody = document.getElementById('functionalCasesBody');
             if (!cases || cases.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8" class="empty-state">该需求暂无关联的测试用例</td></tr>';
+                updateBatchDeleteButton(); // 重置按钮状态
                 return;
             }
 
@@ -3489,6 +3647,7 @@
                 const data = await res.json();
                 if (data.success) {
                     document.getElementById('selectAllFunctional').checked = false;
+                    updateBatchDeleteButton(); // 立即重置按钮状态
                     loadFunctionalCases();
                     alert(`成功删除 ${ids.length} 个测试用例`);
                 } else {
@@ -5239,49 +5398,84 @@
 
     <!-- 图片识别弹窗 -->
     <div class="modal" id="imageUploadModal">
-        <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-content" style="max-width: 900px;">
             <div class="modal-header">
-                <h2>生成功能测试用例</h2>
+                <h2>AI生成功能测试用例</h2>
                 <button class="modal-close" onclick="closeImageUploadModal()">&times;</button>
             </div>
 
             <!-- 标签页切换 -->
             <div class="tab-container" style="display: flex; border-bottom: 1px solid #eee; margin-bottom: 20px;">
-                <button class="tab-btn active" onclick="switchGenTab('doc')" id="tabDoc">AI文档生成</button>
+                <button class="tab-btn active" onclick="switchGenTab('unified')" id="tabUnified">AI智能生成</button>
                 <button class="tab-btn" onclick="switchGenTab('manual')" id="tabManual">手动输入</button>
-                <button class="tab-btn" onclick="switchGenTab('image')" id="tabImage">图片识别</button>
             </div>
 
             <div style="padding: 20px 0;">
-                <!-- AI文档生成模式 -->
-                <div id="panelDoc" style="display: block;">
+                <!-- 统一的AI生成模式 -->
+                <div id="panelUnified" style="display: block;">
                     <div style="margin-bottom: 20px;">
-                        <h3 style="font-size: 16px; margin-bottom: 15px; color: #333;">AI智能生成测试用例</h3>
+                        <h3 style="font-size: 16px; margin-bottom: 15px; color: #333;">输入需求信息</h3>
                         <div style="margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px; font-size: 13px;">
                             <p style="margin: 0;">大模型配置：请先在左侧导航 <strong>AI配置</strong> 页面设置API密钥</p>
                         </div>
+
+                        <!-- 项目背景 -->
                         <div class="form-group">
                             <label>项目背景（可选）</label>
                             <textarea id="projectContext" rows="2" placeholder="例如：这是一个用户登录系统，包含用户名、密码验证等功能"></textarea>
                         </div>
+
+                        <!-- 需求文档内容 -->
                         <div class="form-group">
-                            <label>需求文档内容</label>
-                            <textarea id="requirementText" rows="6" placeholder="粘贴需求文档内容，如PRD、产品说明、需求规格等"></textarea>
+                            <label>需求文档内容（可选）</label>
+                            <textarea id="requirementText" rows="4" placeholder="粘贴需求文档内容，如PRD、产品说明、需求规格等"></textarea>
                         </div>
+
+                        <!-- 上传需求文档 -->
                         <div class="form-group">
-                            <label>或上传需求文档</label>
-                            <input type="file" id="requirementFile" accept=".docx,.pdf,.png,.jpg,.jpeg,.bmp,.gif">
+                            <label>上传需求文档（可选，支持 docx、pdf）</label>
+                            <input type="file" id="requirementFile" accept=".docx,.pdf" onchange="handleRequirementFileSelect(this)">
+                            <div id="reqFilePreview" style="margin: 8px 0; color: #666;"></div>
                         </div>
-                        <div id="reqFilePreview" style="margin: 10px 0; color: #666;"></div>
+
+                        <div style="margin: 15px 0; padding: 10px; background: #f0f7ff; border-radius: 6px; border-left: 3px solid #4a90d9;">
+                            <p style="margin: 0 0 5px; font-weight: 500; color: #333;">或上传UI截图/设计图</p>
+                            <p style="margin: 0; color: #666; font-size: 13px;">支持多张截图一起分析，识别界面元素和功能流程</p>
+                        </div>
+
+                        <!-- 图片上传区域 -->
+                        <div class="form-group">
+                            <label>上传UI截图或设计图（支持多选）</label>
+                            <input type="file" id="imageFiles" accept="image/*" multiple onchange="handleImageFileSelect(this)">
+                        </div>
+
+                        <!-- 粘贴区域 -->
+                        <div class="form-group">
+                            <label>复制粘贴图片 (Ctrl+V) - 支持多张</label>
+                            <div id="pasteArea" style="border: 2px dashed #ddd; border-radius: 6px; padding: 15px; text-align: center; cursor: pointer; transition: border-color 0.3s; min-height: 80px; background: #fafafa;" onclick="focusPasteArea()" tabindex="0">
+                                <p id="pasteAreaHint" style="color: #999; margin: 0;">点击此处聚焦，然后按 Ctrl+V 粘贴图片（可多次粘贴多张）</p>
+                                <div id="imagePreviewGrid" class="image-preview-grid" style="display: none;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 模块名称 -->
+                        <div class="form-group">
+                            <label>模块名称（可选）</label>
+                            <input type="text" id="imageModuleName" placeholder="例如：用户管理、订单管理、登录模块" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+
+                        <!-- 已上传文件预览 -->
+                        <div id="uploadedFilesPreview" style="margin: 10px 0;"></div>
                     </div>
-                    <div style="margin-top: 15px; padding: 15px; background: #f0f7ff; border-radius: 6px; font-size: 13px;">
-                        <p style="margin: 0; font-weight: 500;">支持格式：</p>
-                        <p style="margin: 5px 0;">• Word文档 (.docx) - 需求文档、产品说明书</p>
-                        <p style="margin: 5px 0;">• PDF文档 (.pdf) - 需求规格、设计文档</p>
-                        <p style="margin: 5px 0;">• 图片 (.png/.jpg) - UI原型截图、设计稿</p>
+
+                    <div style="margin-top: 15px; padding: 15px; background: #f5f5f5; border-radius: 6px; font-size: 13px;">
+                        <p style="margin: 0; font-weight: 500;">功能说明：</p>
+                        <p style="margin: 5px 0;">• 支持同时提供需求文档和UI截图，二者结合生成更全面的测试用例</p>
+                        <p style="margin: 5px 0;">• 如果只提供一种内容，则基于该内容生成测试用例</p>
+                        <p style="margin: 5px 0;">• 图片支持：UI截图、设计稿、原型图等</p>
                     </div>
                     <div class="actions" style="margin-top: 20px;">
-                        <button class="btn btn-primary" onclick="generateFromDocument()">AI生成测试用例</button>
+                        <button class="btn btn-primary" onclick="generateFromUnified()">AI生成测试用例</button>
                         <button class="btn btn-secondary" onclick="closeImageUploadModal()">取消</button>
                     </div>
                     <div id="aiGenStatus" style="margin-top: 15px;"></div>
@@ -5300,33 +5494,6 @@
                             <input type="text" id="pageModule" placeholder="例如：登录页面、用户注册">
                         </div>
                         <button class="btn btn-primary" onclick="generateFromManualInput()">手动生成测试用例</button>
-                    </div>
-                </div>
-
-                <!-- 图片识别模式 -->
-                <div id="panelImage" style="display: none;">
-                    <div>
-                        <h3 style="font-size: 16px; margin-bottom: 15px; color: #333;">上传图片识别</h3>
-                        <div class="form-group">
-                            <label>上传UI截图或设计图</label>
-                            <input type="file" id="imageFile" accept="image/*">
-                        </div>
-                        <div class="form-group">
-                            <label>或直接粘贴图片 (Ctrl+V)</label>
-                            <div id="pasteArea" style="border: 2px dashed #ddd; border-radius: 6px; padding: 30px; text-align: center; cursor: pointer; transition: border-color 0.3s;" onclick="focusPasteArea()">
-                                <p style="color: #999; margin: 0;">点击此处聚焦，然后按 Ctrl+V 粘贴图片</p>
-                            </div>
-                        </div>
-                        <div id="imagePreview" style="margin: 15px 0; text-align: center;"></div>
-                        <div style="margin-top: 15px; padding: 15px; background: #f5f5f5; border-radius: 6px; font-size: 13px;">
-                            <p style="margin: 0; font-weight: 500;">功能说明：</p>
-                            <p style="margin: 5px 0;">上传UI截图后，系统将自动识别截图中的功能元素，并生成相应的功能测试用例。</p>
-                            <p style="margin: 5px 0; color: #e74c3c;">注意：需要安装Tesseract OCR才能识别图片</p>
-                        </div>
-                        <div class="actions" style="margin-top: 20px;">
-                            <button class="btn btn-primary" onclick="recognizeImage()">图片识别生成</button>
-                            <button class="btn btn-secondary" onclick="closeImageUploadModal()">取消</button>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -5381,6 +5548,51 @@
         .tab-btn.active {
             color: #4a90d9;
             border-bottom-color: #4a90d9;
+        }
+        /* 图片预览网格样式 */
+        .image-preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .image-preview-grid .preview-item {
+            position: relative;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #f5f5f5;
+        }
+        .image-preview-grid .preview-item img {
+            width: 100%;
+            height: 70px;
+            object-fit: cover;
+            display: block;
+        }
+        .image-preview-grid .remove-btn {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            cursor: pointer;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            text-align: center;
+            line-height: 18px;
+            font-size: 12px;
+        }
+        .image-preview-grid .remove-btn:hover {
+            background: rgba(0,0,0,0.8);
+        }
+        .image-preview-grid .preview-item .img-name {
+            font-size: 10px;
+            color: #666;
+            padding: 2px 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
     </style>
 

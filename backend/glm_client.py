@@ -219,6 +219,88 @@ class GLMClient:
         except (KeyError, json.JSONDecodeError) as e:
             return False, f"解析分析结果失败: {str(e)}"
 
+    def generate_test_cases_from_images(self, images: List[Dict], module_name: str = "") -> Tuple[bool, List[Dict]]:
+        """
+        根据多张截图生成功能测试用例（视觉理解）
+
+        Args:
+            images: 图片数据列表，格式为 [{"filename": "xxx.png", "base64": "..."}, ...]
+            module_name: 模块名称
+
+        Returns:
+            (success, test_cases_list_or_error)
+        """
+        system_prompt = """你是一名高级功能测试工程师，擅长分析UI截图生成测试用例。
+
+请分析截图中的功能元素（按钮、表单、输入框、链接、菜单、导航等）和用户交互流程。
+根据SAAS行业最佳实践，生成全面的功能测试用例。
+
+返回JSON数组，每个用例包含：
+- case_id: TC_XXX 格式
+- name: 测试用例名称
+- type: "functional"
+- description: 用例描述
+- priority: high/medium/low
+- steps: [{"action": "...", "expected": "..."}]
+- expected_result: 预期结果
+- module: 所属模块
+
+请生成10-15个测试用例，覆盖：正向、反向、边界值、异常处理。
+
+只返回JSON数组，不要其他文字。"""
+
+        # 构建多模态消息内容
+        content = [{"type": "text", "text": f"请分析这些UI截图，识别功能元素和交互流程。模块名称：{module_name if module_name else 'UI功能'}"}]
+        for img in images:
+            # 根据文件扩展名确定 MIME 类型
+            filename = img.get("filename", "image.png")
+            if filename.lower().endswith(".jpg") or filename.lower().endswith(".jpeg"):
+                mime_type = "image/jpeg"
+            elif filename.lower().endswith(".gif"):
+                mime_type = "image/gif"
+            elif filename.lower().endswith(".webp"):
+                mime_type = "image/webp"
+            else:
+                mime_type = "image/png"
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime_type};base64,{img['base64']}"}
+            })
+
+        success, result = self.chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content}
+            ],
+            temperature=0.7,
+            max_tokens=4096
+        )
+
+        if not success:
+            return False, result
+
+        # 解析返回的内容
+        try:
+            content_text = result['choices'][0]['message']['content']
+
+            # 尝试提取JSON数组
+            first_bracket = content_text.find('[')
+            last_bracket = content_text.rfind(']')
+
+            if first_bracket >= 0 and last_bracket > first_bracket:
+                extracted = content_text[first_bracket:last_bracket + 1]
+                if extracted.startswith('[') and extracted.endswith(']'):
+                    try:
+                        test_cases = json.loads(extracted)
+                        return True, test_cases
+                    except json.JSONDecodeError:
+                        pass
+
+            return False, f"模型返回格式错误，无法解析测试用例。返回内容: {content_text[:200]}"
+
+        except (KeyError, json.JSONDecodeError) as e:
+            return False, f"解析测试用例失败: {str(e)}"
+
 
 def get_glm_client(api_key: str = None, model: str = "glm-4", local: bool = False) -> GLMClient:
     """获取 GLM 客户端实例"""
