@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(ping:*)",
+      "Bash(start \"\":*)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_file_upload",
+      "Bash(curl:*)",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "mcp__plugin_playwright_playwright__browser_handle_dialog",
+      "Bash(dir:*)",
+      "Bash(tasklist:*)",
+      "Bash(powershell:*)",
+      "Bash(Select-Object:*)",
+      "Bash(taskkill:*)",
+      "Bash(exit:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'共 {len\\(d[\\\\\"data\\\\\"]\\)} 条接口测试用例'\\); [print\\(f'  - {c[\\\\\"name\\\\\"]} \\({c[\\\\\"method\\\\\"]} {c[\\\\\"path\\\\\"]}\\)'\\) for c in d['data'][:10]]\")",
+      "Bash(pkill -f \"python.*server.py\")",
+      "Bash(pkill -f \"python.*start.py\")",
+      "Bash(pkill -f \"python backend/server.py\")"
+    ]
+  },
+  "outputStyle": "Explanatory"
+}
