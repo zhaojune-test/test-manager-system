@@ -1,8 +1,0 @@
-{
-  "name": "test-manager",
-  "version": "1",
-  "engine": "python",
-  "pythonVersion": "3.11",
-  "installCommand": "pip install -r requirements.txt",
-  "startCommand": "cd backend && python server.py"
-}
